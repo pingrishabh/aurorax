@@ -45,6 +45,24 @@ async def test_empty_content_rejected(client):
     assert resp.status_code == 422  # pydantic min_length=1
 
 
+async def test_oversized_inputs_are_4xx_not_500(client):
+    sid = await make_session(client)
+    # Long titles (varchar(200)) and huge messages must be rejected cleanly,
+    # never reach Postgres and 500.
+    assert (await client.post("/api/sessions", json={"title": "x" * 300})).status_code == 422
+    assert (await client.patch(f"/api/sessions/{sid}", json={"title": "y" * 300})).status_code == 422
+    assert (await send(client, sid, "z" * 200000)).status_code == 422
+
+
+async def test_nul_bytes_stripped_not_500(client):
+    # Postgres TEXT cannot store NUL; it is stripped before insert.
+    sid = await make_session(client)
+    resp = await send(client, sid, "a\x00b")
+    assert resp.status_code == 202
+    user = [m for m in await get_messages(client, sid) if m["role"] == "user"][0]
+    assert user["content"] == "ab"
+
+
 async def test_rename_missing_session_404(client):
     resp = await client.patch(f"/api/sessions/{uuid.uuid4()}", json={"title": "x"})
     assert resp.status_code == 404

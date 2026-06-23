@@ -26,7 +26,8 @@ docker compose up --build
 
 Open **http://localhost:8080**. That is the entire setup. It brings up Postgres,
 Redis, 3 API replicas, 3 workers, and nginx (serving the SPA + load-balancing
-the API).
+the API). Only port 8080 is published; if it is taken, run
+`PORT=9090 docker compose up --build` and open that port instead.
 
 ## Try it (90-second tour)
 
@@ -102,11 +103,11 @@ DESIGN.md                # design system the UI follows (dark, warm-neutral, cor
 
 ## Optional: local dev (hot reload, no image rebuilds)
 
-The bundled compose publishes Postgres (5432) and Redis (6379), so you can run
-just the datastores in Docker and the rest as local processes:
+Publish the datastores with the dev overlay (kept out of the main compose so the
+single command never conflicts on host ports), then run the rest locally:
 
 ```bash
-docker compose up -d postgres redis
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
 
 # api (in server/)
 cd server && pip install -r requirements.txt
@@ -128,3 +129,6 @@ cd web && npm install && VITE_API_TARGET=http://localhost:8000 npm run dev
   excited; anything else rotates to a different style so the change is visible.
 - Timing and TTLs are tunable via env (`TOKEN_MIN_DELAY`, `TOKEN_MAX_DELAY`,
   `THINK_MIN_DELAY`, `THINK_MAX_DELAY`, `ACTIVE_TTL`); see `.env.example`.
+- A fresh clone needs no migration (the schema is created on boot). If you
+  *upgrade in place* across a schema change, reset the volume once:
+  `docker compose down -v && docker compose up --build`.

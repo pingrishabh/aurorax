@@ -1,0 +1,12 @@
+# Opt-in overlay for the local-dev path: publishes Postgres and Redis on the
+# host so you can run api/worker/web as local processes. Kept OUT of the main
+# compose so `docker compose up` never fails on a host port conflict.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
