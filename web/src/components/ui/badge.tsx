@@ -1,17 +1,16 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-type Tone = "neutral" | "coral" | "muted";
+type Tone = "coral" | "muted";
 
 const tones: Record<Tone, string> = {
-  neutral: "border-border bg-secondary text-foreground",
   coral: "border-transparent bg-primary/15 text-primary",
   muted: "border-border bg-transparent text-muted-foreground",
 };
 
 export function Badge({
   className,
-  tone = "neutral",
+  tone = "muted",
   ...props
 }: React.HTMLAttributes<HTMLSpanElement> & { tone?: Tone }) {
   return (

@@ -18,7 +18,7 @@ token-by-token, but the *system* around it is the real, scalable design.
            ┌─────────┐       ┌─────────┐       ┌─────────┐
            │  api-1  │       │  api-2  │  ...  │  api-N  │   FastAPI, STATELESS
            └────┬────┘       └────┬────┘       └────┬────┘   (no sticky sessions)
-                │  XADD job / PUBLISH steer|cancel / SUBSCRIBE tokens
+                │  XADD job · RPUSH steerq · SET cancel · SUBSCRIBE tokens
                 └─────────────────┼──────────────────┘
                                   ▼
                        ┌──────────────────────┐

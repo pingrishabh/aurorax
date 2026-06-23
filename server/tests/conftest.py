@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import time
 
 import pytest_asyncio
 

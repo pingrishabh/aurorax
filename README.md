@@ -1,85 +1,109 @@
-# Mock Chat, steerable, multi-session, horizontally scalable
+# Mock Chat
 
-A ChatGPT-style mock chat UI that demonstrates three requirements:
+A ChatGPT-style mock chat that demonstrates three requirements, with the
+*architecture* as the real deliverable. There is no real LLM; workers stream
+canned text token by token.
 
 - **You never wait for a reply.** Sending never blocks the input, and a message
-  sent *while a reply is still streaming* **steers it in real time** (the answer
-  changes direction and gets a `steered` badge).
-- **Multiple chat sessions**, ChatGPT-style sidebar, persisted server-side so
-  they survive reload.
-- **Horizontally scalable backend**, stateless API replicas behind a load
-  balancer, an independently-scaled worker pool, Redis for coordination. See
-  [ARCHITECTURE.md](./ARCHITECTURE.md).
+  sent *while a reply is streaming* **steers it in real time**: the reply pauses
+  to "think", then regenerates in the new direction with a `steered` badge.
+- **Multiple chat sessions** in a sidebar, persisted in Postgres so they survive
+  reload.
+- **Horizontally scalable backend:** stateless API replicas behind a load
+  balancer, an independently-scaled worker pool, Redis for coordination.
 
-Stack: React + Vite + Tailwind + shadcn/ui (Cal.com design language) · FastAPI
-(Python) · Postgres + Redis · nginx. There is no real LLM; workers stream canned
-text token-by-token.
+Stack: React + Vite + Tailwind + shadcn-style UI (dark theme per
+[`DESIGN.md`](./DESIGN.md)) · FastAPI (Python) · Postgres + Redis · nginx.
+Architecture and scaling details in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## Run it (one command)
+## Quick start
 
-Requires Docker Desktop running.
+Requires Docker (Desktop running). One command:
 
 ```bash
 docker compose up --build
 ```
 
-Then open **http://localhost:8080**.
+Open **http://localhost:8080**. That is the entire setup. It brings up Postgres,
+Redis, 3 API replicas, 3 workers, and nginx (serving the SPA + load-balancing
+the API).
 
-This starts the full distributed topology: Postgres, Redis, **3× api**,
-**3× worker**, and nginx serving the SPA + load-balancing the api replicas.
+## Try it (90-second tour)
 
-## Try the demo (smoke checklist)
-
-1. **Stream**, send "Tell me about horizontal scaling." Watch it type out.
-2. **Steer mid-stream**, *while it is still typing*, send "make it shorter" (or
-   "in French", "as a haiku", "be a pirate"). The reply changes direction and
-   shows a **steered** badge. Input was never blocked.
-3. **Stop**, send a message, then hit the ■ Stop button. Generation halts and
-   the message is tagged **stopped**.
-4. **Reload mid-stream**, send a message and refresh the page while it types.
-   It reconnects and catches up the partial reply (Postgres history + Redis
-   draft buffer).
-5. **Multiple sessions**, "New" in the sidebar; switch between chats; rename /
-   delete via the ⋯ menu. Open http://localhost:8080 in a second tab to see the
-   same persisted sessions.
-6. **It's really distributed**, `docker compose ps` shows 3 api + 3 worker.
-   Scale further:
+1. **Stream**: send "Tell me about horizontal scaling" and watch it type out.
+2. **Steer mid-stream**: *while it is typing*, send "make it a haiku" (or "in
+   French", "shorter", "be a pirate"). It badges **steered**, pauses to think,
+   and regenerates in the new direction. The input was never blocked.
+3. **Stop**: send, then hit ■. Generation halts; the reply is tagged **stopped**.
+4. **Reload mid-stream**: refresh while it types; it reconnects and catches up
+   the partial reply.
+5. **Sessions**: "New chat" in the sidebar; switch, rename, or delete via the ⋯
+   menu. Open the URL in a second tab to see the same persisted chats.
+6. **Scale out**: `docker compose ps` shows 3 api + 3 worker. Add more:
    ```bash
    docker compose up --build --scale api=5 --scale worker=8
    ```
 
-## Project layout
+## Tests
 
-```
-server/                 # Python package, one codebase, two entrypoints
-  app/main.py           #   api  (FastAPI: REST + SSE)         [stateless]
-  app/worker.py         #   worker (Redis consumer-group loop) [generation]
-  app/db.py             #   async SQLAlchemy engine + schema
-  app/models.py         #   sessions / messages (Postgres)
-  app/redis_bus.py      #   queue, pub/sub channels, draft + active keys
-  app/mockllm.py        #   canned content pools + steering routing
-  app/schemas.py        #   pydantic request/response shapes
-web/                    # Vite + React + TS + Tailwind + shadcn/ui
-  src/hooks/useChat.ts  #   non-blocking send + SSE apply (seq de-dup)
-  src/components/...     #   Sidebar, ChatPane, Composer, Message, ui/*
-  DESIGN.md             #   Cal.com design notes (from `getdesign add cal`)
-nginx/nginx.conf        # load balancer + static host + SSE-safe proxy
-docker-compose.yml      # postgres, redis, api×3, worker×3, web(nginx)
+Backend (48 pytest, throwaway Postgres + Redis, one command):
+
+```bash
+docker compose -f docker-compose.test.yml up --build \
+  --abort-on-container-exit --exit-code-from tests
 ```
 
-## How the requirements are met (quick map)
+Frontend (13 vitest, pure logic, no infra):
+
+```bash
+cd web && npm install && npm test
+```
+
+Coverage spans the good/bad/ugly/edge: session CRUD + validation, the
+steer-vs-new gate (incl. 12 simultaneous sends), turn grouping,
+generation/thinking/cancel/last-steer-wins, the pub/sub multiplex hub + draft
+buffer, and fault tolerance (outage durability, `XAUTOCLAIM` reclaim,
+persist-then-ack, dead-lettering). The frontend tests cover turn grouping
+(`lib/turns.ts`) and the SSE reducer (`lib/stream.ts`).
+
+## Layout
+
+```
+server/                  # one Python package, two entrypoints
+  app/main.py            #   api   : FastAPI REST + SSE (stateless)
+  app/worker.py          #   worker: Redis consumer-group generation loop
+  app/db.py              #   async SQLAlchemy engine + schema
+  app/models.py          #   sessions / messages (Postgres)
+  app/redis_bus.py       #   stream/queue + channel + key builders
+  app/sse_hub.py         #   per-process pub/sub multiplexer for SSE
+  app/mockllm.py         #   canned content pools + steer keyword routing
+  app/schemas.py         #   pydantic request/response shapes
+  tests/                 #   pytest suite
+web/                     # Vite + React + TS + Tailwind
+  src/components/        #   Sidebar, ChatPane, Turn, Composer, Logo, ui/*
+  src/hooks/useChat.ts   #   non-blocking send + live SSE state
+  src/lib/stream.ts      #   SSE frame reducer (seq de-dup, steer, reset, done)
+  src/lib/turns.ts       #   group a prompt + its steers + reply into one turn
+nginx/nginx.conf         # load balancer + SPA host + SSE-safe proxy
+docker-compose.yml       # postgres, redis, api×3, worker×3, web(nginx)
+docker-compose.test.yml  # hermetic backend test run
+DESIGN.md                # design system the UI follows (dark, warm-neutral, coral)
+```
+
+## How each requirement is met
 
 | Requirement | Mechanism |
 |---|---|
-| Don't wait for the reply | `POST` returns `202` after enqueuing; UI is optimistic and never disables input |
-| Steer in real time | new message during generation → `PUBLISH steer:{session}` → worker adapts the live stream |
-| Multiple sessions, persisted | sidebar over `sessions`/`messages` tables in Postgres |
-| Horizontal scale | stateless `api` behind nginx + queue-fed `worker` pool + Redis Pub/Sub fan-out (no sticky sessions) |
-| Postgres & Redis only, justified | Postgres = durable history; Redis = queue + live fan-out + steer/cancel + reconnect buffer (see ARCHITECTURE.md) |
+| Don't wait for the reply | `POST` returns `202` after enqueuing on a Redis Stream; the UI is optimistic and never disables input |
+| Steer in real time | a message during generation is `RPUSH`ed to a durable `steerq:{reply}` list; the worker drains it and regenerates (survives a worker outage) |
+| Multiple sessions, persisted | sidebar over `sessions` / `messages` tables in Postgres |
+| Horizontal scale | stateless `api` behind nginx + queue-fed `worker` pool + Redis pub/sub token fan-out (no sticky sessions) |
+| Postgres & Redis only | Postgres = durable history; Redis = work queue + token fan-out + durable steer/cancel + reconnect buffer (each structure justified in ARCHITECTURE.md) |
 
-## Optional: local dev (without rebuilding images)
+## Optional: local dev (hot reload, no image rebuilds)
 
-Run Postgres + Redis in Docker, the rest as local processes:
+The bundled compose publishes Postgres (5432) and Redis (6379), so you can run
+just the datastores in Docker and the rest as local processes:
 
 ```bash
 docker compose up -d postgres redis
@@ -87,54 +111,20 @@ docker compose up -d postgres redis
 # api (in server/)
 cd server && pip install -r requirements.txt
 DATABASE_URL=postgresql+asyncpg://chat:chat@localhost:5432/chat \
-REDIS_URL=redis://localhost:6379/0 \
-uvicorn app.main:app --port 8000
+REDIS_URL=redis://localhost:6379/0 uvicorn app.main:app --port 8000
 
 # worker (another shell, in server/)
 DATABASE_URL=postgresql+asyncpg://chat:chat@localhost:5432/chat \
-REDIS_URL=redis://localhost:6379/0 \
-python -m app.worker
+REDIS_URL=redis://localhost:6379/0 python -m app.worker
 
-# web (another shell, in web/), proxies /api to the api above
+# web (another shell, in web/): proxies /api to the api above
 cd web && npm install && VITE_API_TARGET=http://localhost:8000 npm run dev
 ```
 
-## Tests
-
-**Backend** (pytest against a throwaway Postgres + Redis, one command, no host
-setup):
-
-```bash
-docker compose -f docker-compose.test.yml up --build \
-  --abort-on-container-exit --exit-code-from tests
-```
-
-48 tests covering the good/bad/ugly/edge: session CRUD + validation, non-blocking
-send, the steer-vs-new gate (incl. 12 simultaneous sends to one session), turn
-grouping, worker generation + thinking gap + cancel + last-steer-wins, the
-pub/sub multiplex hub and draft buffer, and fault tolerance (worker-outage
-durability, steer durability across an outage, `XAUTOCLAIM` reclaim,
-persist-then-ack no-ack-on-failure, and dead-lettering). Sources in
-`server/tests/`.
-
-**Frontend** (Vitest, pure-logic units, no infra):
-
-```bash
-cd web && npm install && npm test
-```
-
-13 tests covering the turn-grouping (`lib/turns.ts`) and the SSE reducer
-(`lib/stream.ts`): token append, seq de-dup, catch-up overlap, steered, reset,
-and done.
-
-> The live SSE HTTP stream is verified end-to-end against the running stack
-> (httpx's ASGITransport buffers responses, so the in-process suite tests the
-> hub + draft buffer the endpoint relays instead).
-
 ## Notes
-- SSE through nginx needs `proxy_buffering off` + HTTP/1.1 (configured in
-  `nginx/nginx.conf`).
+
+- SSE through nginx needs `proxy_buffering off` + HTTP/1.1 (set in `nginx/nginx.conf`).
 - Steering routes by keyword: shorter / detailed / French / haiku / pirate /
   excited; anything else rotates to a different style so the change is visible.
-- Token pacing and TTLs are tunable via env (`TOKEN_MIN_DELAY`,
-  `TOKEN_MAX_DELAY`, `ACTIVE_TTL`), see `.env.example`.
+- Timing and TTLs are tunable via env (`TOKEN_MIN_DELAY`, `TOKEN_MAX_DELAY`,
+  `THINK_MIN_DELAY`, `THINK_MAX_DELAY`, `ACTIVE_TTL`); see `.env.example`.

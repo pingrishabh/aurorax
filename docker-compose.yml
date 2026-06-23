@@ -14,6 +14,8 @@ services:
       POSTGRES_USER: chat
       POSTGRES_PASSWORD: chat
       POSTGRES_DB: chat
+    ports:
+      - "5432:5432" # exposed for the optional local-dev path
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,6 +27,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    ports:
+      - "6379:6379" # exposed for the optional local-dev path
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
