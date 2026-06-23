@@ -32,9 +32,10 @@ the API). Only port 8080 is published; if it is taken, run
 ## Try it (90-second tour)
 
 1. **Stream**: send "Tell me about horizontal scaling" and watch it type out.
-2. **Steer mid-stream**: *while it is typing*, send "make it a haiku" (or "in
-   French", "shorter", "be a pirate"). It badges **steered**, pauses to think,
-   and regenerates in the new direction. The input was never blocked.
+2. **Steer mid-stream**: *while it is typing*, send a course-correction like
+   "actually, keep it short", "go deeper with more detail", or "say it like a
+   pirate". It badges **steered**, pauses to think, and regenerates in the new
+   direction. The input was never blocked.
 3. **Stop**: send, then hit ■. Generation halts; the reply is tagged **stopped**.
 4. **Reload mid-stream**: refresh while it types; it reconnects and catches up
    the partial reply.
