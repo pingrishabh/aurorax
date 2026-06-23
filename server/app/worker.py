@@ -27,6 +27,7 @@ from .models import Message
 
 CONSUMER = f"worker-{socket.gethostname()}-{os.getpid()}"
 IDLE_RECLAIM_MS = 30_000  # reclaim jobs abandoned by a dead worker after 30s
+MAX_DELIVERIES = 5  # dead-letter a job after this many failed attempts
 
 
 async def _set_status(amid: uuid.UUID, **fields) -> None:
@@ -132,19 +133,90 @@ async def handle_job(r, fields: dict) -> None:
             ),
         )
     finally:
-        await r.delete(redis_bus.draft_key(amid))
-        await r.delete(redis_bus.active_key(sid))
-        await r.delete(redis_bus.steerq_key(amid))
-        await r.delete(redis_bus.cancel_key(amid))
+        # Best-effort cleanup; never let a cleanup error mask a generation error
+        # (which would otherwise swallow the failure and wrongly ack the job).
+        for key in (
+            redis_bus.draft_key(amid),
+            redis_bus.active_key(sid),
+            redis_bus.steerq_key(amid),
+            redis_bus.cancel_key(amid),
+        ):
+            try:
+                await r.delete(key)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def _delivery_count(r, entry_id: str) -> int:
+    try:
+        info = await r.xpending_range(
+            redis_bus.REQUESTS_STREAM,
+            redis_bus.WORKERS_GROUP,
+            min=entry_id,
+            max=entry_id,
+            count=1,
+        )
+        return info[0]["times_delivered"] if info else 1
+    except Exception:  # noqa: BLE001
+        return 1
 
 
 async def _process(r, entry_id: str, fields: dict) -> None:
+    """Run a job, then XACK ONLY on success.
+
+    A failure (DB/Redis blip) leaves the entry pending so it is retried later via
+    XAUTOCLAIM, i.e. persist-then-ack: a generated reply is never acked until it
+    is durably written. Poison jobs that keep failing are dead-lettered after
+    MAX_DELIVERIES so they cannot loop forever.
+    """
+    if not fields:  # tombstone (trimmed/deleted entry)
+        await r.xack(redis_bus.REQUESTS_STREAM, redis_bus.WORKERS_GROUP, entry_id)
+        return
     try:
         await handle_job(r, fields)
-    except Exception as exc:  # noqa: BLE001 - keep the worker alive
-        print(f"[{CONSUMER}] job {entry_id} failed: {exc!r}", flush=True)
-    finally:
-        await r.xack(redis_bus.REQUESTS_STREAM, redis_bus.WORKERS_GROUP, entry_id)
+    except Exception as exc:  # noqa: BLE001
+        if await _delivery_count(r, entry_id) >= MAX_DELIVERIES:
+            print(
+                f"[{CONSUMER}] job {entry_id} dead-lettered after retries: {exc!r}",
+                flush=True,
+            )
+            # Best-effort: don't leave the reply stuck "thinking" on reload.
+            try:
+                await _set_status(
+                    uuid.UUID(fields["assistant_message_id"]), status="cancelled"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            await r.xack(redis_bus.REQUESTS_STREAM, redis_bus.WORKERS_GROUP, entry_id)
+        else:
+            print(f"[{CONSUMER}] job {entry_id} failed, will retry: {exc!r}", flush=True)
+        return
+    await r.xack(redis_bus.REQUESTS_STREAM, redis_bus.WORKERS_GROUP, entry_id)
+
+
+async def _drain_once(r) -> None:
+    # Reclaim jobs abandoned by a crashed worker, then take new work.
+    _, claimed, _ = await r.xautoclaim(
+        redis_bus.REQUESTS_STREAM,
+        redis_bus.WORKERS_GROUP,
+        CONSUMER,
+        min_idle_time=IDLE_RECLAIM_MS,
+        start_id="0-0",
+        count=10,
+    )
+    for entry_id, fields in claimed:
+        await _process(r, entry_id, fields)
+
+    resp = await r.xreadgroup(
+        redis_bus.WORKERS_GROUP,
+        CONSUMER,
+        {redis_bus.REQUESTS_STREAM: ">"},
+        count=1,
+        block=5000,
+    )
+    for _stream, entries in resp or []:
+        for entry_id, fields in entries:
+            await _process(r, entry_id, fields)
 
 
 async def run() -> None:
@@ -153,36 +225,28 @@ async def run() -> None:
     await redis_bus.ensure_group(r)
     print(f"[{CONSUMER}] ready", flush=True)
 
+    # Survive Redis/DB blips instead of crashing the process: on error, back off
+    # and retry. With `restart: unless-stopped` this is belt-and-braces, the loop
+    # reconnects without even losing the process.
+    backoff = 1.0
     while True:
-        # First, reclaim any jobs abandoned by a crashed worker.
         try:
-            _, claimed, _ = await r.xautoclaim(
-                redis_bus.REQUESTS_STREAM,
-                redis_bus.WORKERS_GROUP,
-                CONSUMER,
-                min_idle_time=IDLE_RECLAIM_MS,
-                start_id="0-0",
-                count=1,
-            )
-            for entry_id, fields in claimed:
-                if fields:
-                    await _process(r, entry_id, fields)
+            await _drain_once(r)
+            backoff = 1.0
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            print(f"[{CONSUMER}] reclaim error: {exc!r}", flush=True)
-
-        # Then block for new work.
-        resp = await r.xreadgroup(
-            redis_bus.WORKERS_GROUP,
-            CONSUMER,
-            {redis_bus.REQUESTS_STREAM: ">"},
-            count=1,
-            block=5000,
-        )
-        if not resp:
-            continue
-        for _stream, entries in resp:
-            for entry_id, fields in entries:
-                await _process(r, entry_id, fields)
+            print(
+                f"[{CONSUMER}] loop error ({exc!r}); reconnecting in {backoff:.0f}s",
+                flush=True,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 10.0)
+            # Redis may have restarted and lost the group; recreate (idempotent).
+            try:
+                await redis_bus.ensure_group(r)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: chat
       POSTGRES_PASSWORD: chat
@@ -23,6 +24,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -31,6 +33,7 @@ services:
 
   api:
     build: ./server
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
       REDIS_URL: redis://redis:6379/0
@@ -45,6 +48,7 @@ services:
 
   worker:
     build: ./server
+    restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     environment:
       DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
@@ -61,6 +65,7 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+    restart: unless-stopped
     ports:
       - "8080:80"
     depends_on:

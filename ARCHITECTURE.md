@@ -121,18 +121,48 @@ docker compose up --build --scale api=5 --scale worker=8
 ```
 
 ## Resilience notes
-- **At-least-once** delivery: jobs are `XACK`-ed only after handling; a crashed
-  worker's un-acked jobs are reclaimed by another via `XAUTOCLAIM` (idle > 30 s).
+- **Persist-then-ack (at-least-once):** a job is `XACK`-ed only after its reply
+  is durably written to Postgres. If the DB or Redis blips mid-job the entry
+  stays pending and is retried by `XAUTOCLAIM` (idle > 30 s); a crashed worker's
+  jobs are likewise reclaimed. Poison jobs are dead-lettered after
+  `MAX_DELIVERIES` so they can't loop forever. (A retried reply re-streams from
+  `seq 0`, which connected clients de-dupe, so no visible duplicate.)
+- **Workers survive infra blips:** the run loop catches Redis/DB errors and
+  reconnects with backoff (re-creating the consumer group if Redis restarted),
+  and every service has `restart: unless-stopped`, so a dependency hiccup can't
+  permanently kill a worker.
 - **Outage-durable control:** steer/cancel use durable Redis structures
   (`steerq:{mid}` list, `cancel:{mid}` flag) the worker drains on pickup, so a
   message sent in a session whose worker pool is *down* still queues its job
   **and** carries its steer, both applied when capacity returns. (Live token
   *delivery* still rides Pub/Sub, which is correct: there's nothing to deliver
   to until a client is connected.)
+- **Bounded queue:** `XADD ... MAXLEN ~ 10000` caps the work stream so it can't
+  grow without limit under sustained load.
 - **TTLs everywhere** on Redis coordination keys, so a crash can't wedge a
   session: the `gen:active` gate, `draft` buffer, and per-message control keys
   self-heal after `ACTIVE_TTL`.
 - **Reload-safe** streaming via the draft buffer + `seq` de-dup.
+
+## Scaling beyond one node
+
+The api and worker tiers scale by adding replicas (stateless web tier;
+consumer-group workers). The remaining question is the single Redis and single
+Postgres. There is **no structural blocker** to scaling them out, because the
+app uses only **single-key, cluster-safe** Redis commands and keys **everything
+by `session_id`**. The path, with no app contract change:
+
+| Component | Single-node ceiling | Scale-out |
+|---|---|---|
+| **Work queue** | one `gen:requests` stream lives on one shard | partition into `gen:requests:{hash(sid)%N}`; the api routes by `session_id` (already in the job), a worker pool per shard |
+| **Token fan-out** | plain `PUBLISH` broadcasts to every cluster node | a **dedicated pub/sub Redis**, or Redis 7 **sharded pub/sub** (`SPUBLISH`/`SSUBSCRIBE`) keyed by `session_id`. SSE is already multiplexed to **one connection per api replica**, so the streaming tier scales on connections today |
+| **Durable store** | one Postgres primary | **read replicas** for history reads (the bulk), **partition by `session_id`** for writes, **PgBouncer** once api replicas multiply (connections grow with replicas, not request rate) |
+
+Two gotchas to anticipate: hash-tag a session's Redis keys with `{sid}` if you
+move to Redis Cluster (keeps a session on one slot, enabling atomic multi-key
+ops later); and front Postgres with PgBouncer to absorb per-replica pool fan-in.
+Redis/Postgres **high availability** (Sentinel/Cluster, a hot standby) is a
+separate, orthogonal ops concern, not an app change.
 
 ## What's intentionally mocked / simplified
 - No real model: `mockllm.py` streams canned text; "steering" maps keywords to a

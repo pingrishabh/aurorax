@@ -21,6 +21,7 @@ from . import redis_bus
 from .config import settings
 from .db import SessionLocal, init_db
 from .models import Message, Session
+from .sse_hub import PubSubHub
 from .schemas import (
     MessageCreate,
     MessageOut,
@@ -34,9 +35,13 @@ from .schemas import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.redis = redis_bus.make_redis()
+    # One shared pub/sub connection per api process, multiplexed across all of
+    # this replica's SSE streams (so Redis connections scale O(replicas)).
+    app.state.hub = PubSubHub(app.state.redis)
     await init_db()
     await redis_bus.ensure_group(app.state.redis)
     yield
+    await app.state.hub.close()
     await app.state.redis.aclose()
 
 
@@ -195,6 +200,8 @@ async def send_message(
             "assistant_message_id": str(new_assistant_id),
             "user_message_id": str(user_msg.id),
         },
+        maxlen=10_000,
+        approximate=True,  # bound the stream so it can't grow without limit
     )
     return SendResult(steered=False, assistant_message_id=new_assistant_id)
 
@@ -217,12 +224,13 @@ def _sse(payload: str) -> str:
 @app.get("/api/sessions/{session_id}/stream")
 async def stream(session_id: uuid.UUID, request: Request, r=Depends(get_redis)):
     sid = str(session_id)
+    hub: PubSubHub = request.app.state.hub
 
     async def event_gen():
-        pubsub = r.pubsub()
-        # Subscribe BEFORE replaying the draft so we never miss tokens that land
-        # during catch-up (the client de-dupes by seq).
-        await pubsub.subscribe(redis_bus.tokens_channel(sid))
+        # Register on the shared per-process pub/sub BEFORE replaying the draft,
+        # so we never miss tokens that land during catch-up (client de-dupes by
+        # seq). No new Redis connection is opened here.
+        q = await hub.subscribe(redis_bus.tokens_channel(sid))
         try:
             # Catch-up: if a reply is mid-flight, replay the partial first so a
             # reloaded tab immediately shows what it missed.
@@ -244,16 +252,14 @@ async def stream(session_id: uuid.UUID, request: Request, r=Depends(get_redis)):
             while True:
                 if await request.is_disconnected():
                     break
-                msg = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=15.0
-                )
-                if msg is None:
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
                     yield ": ping\n\n"  # heartbeat keeps the connection open
                     continue
-                yield _sse(msg["data"])
+                yield _sse(data)
         finally:
-            await pubsub.unsubscribe(redis_bus.tokens_channel(sid))
-            await pubsub.aclose()
+            await hub.unsubscribe(redis_bus.tokens_channel(sid), q)
 
     return StreamingResponse(
         event_gen(),
