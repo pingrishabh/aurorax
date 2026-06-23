@@ -5,6 +5,8 @@ import { useChat } from "@/hooks/useChat";
 
 export default function App() {
   const chat = useChat();
+  const activeTitle =
+    chat.sessions.find((s) => s.id === chat.activeId)?.title ?? "New chat";
 
   const onSend = async (text: string) => {
     try {
@@ -16,7 +18,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar
         sessions={chat.sessions}
         activeId={chat.activeId}
@@ -26,10 +28,9 @@ export default function App() {
         onDelete={chat.deleteSession}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-4">
-          <span className="text-sm font-medium tracking-tight">Mock Chat</span>
-          <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            steerable · horizontally scalable
+        <header className="flex h-14 shrink-0 items-center border-b border-border px-5">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {activeTitle}
           </span>
         </header>
         <ChatPane

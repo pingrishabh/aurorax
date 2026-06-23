@@ -20,6 +20,7 @@ export default {
         },
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          active: "hsl(var(--primary-active))",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
@@ -34,6 +35,10 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // DESIGN.md companion accents (used sparingly)
+        teal: "hsl(var(--teal))",
+        amber: "hsl(var(--amber))",
+        success: "hsl(var(--success))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -41,7 +46,9 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
+        serif: ['"Cormorant Garamond"', "Tiempos Headline", "Georgia", "serif"],
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
     },
   },

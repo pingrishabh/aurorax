@@ -50,6 +50,12 @@ class Message(Base):
     # pending | streaming | complete | cancelled
     status: Mapped[str] = mapped_column(String(16), default="complete")
     steered: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Groups a "turn" together: the assistant reply's id. The originating user
+    # prompt, any steering messages, and the reply itself all share this id, so
+    # the UI can nest steers under the prompt with the reply below them.
+    turn_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # True for a user message that steered an in-flight reply (vs starting one).
+    is_steer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

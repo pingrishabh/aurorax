@@ -15,6 +15,8 @@ export interface Message {
   content: string;
   status: MessageStatus;
   steered: boolean;
+  turn_id: string | null;
+  is_steer: boolean;
   created_at: string;
 }
 

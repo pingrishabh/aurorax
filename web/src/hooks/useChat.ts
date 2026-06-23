@@ -10,6 +10,8 @@ function assistantBase(mid: string, sid: string, content: string): Message {
     content,
     status: "streaming",
     steered: false,
+    turn_id: mid,
+    is_steer: false,
     created_at: new Date().toISOString(),
   };
 }
@@ -107,26 +109,35 @@ export function useChat() {
     async (content: string) => {
       if (!activeId) return;
       const sid = activeId;
+      const tmpId = `tmp-${Date.now()}`;
       const optimistic: Message = {
-        id: `tmp-${Date.now()}`,
+        id: tmpId,
         session_id: sid,
         role: "user",
         content,
         status: "complete",
         steered: false,
+        turn_id: null,
+        is_steer: false,
         created_at: new Date().toISOString(),
       };
       setMessages((p) => [...p, optimistic]);
 
       const res = await api.sendMessage(sid, content);
-      if (!res.steered && res.assistant_message_id) {
-        const mid = res.assistant_message_id;
-        setMessages((p) =>
-          p.some((m) => m.id === mid)
-            ? p
-            : [...p, { ...assistantBase(mid, sid, ""), status: "pending" }]
+      setMessages((p) => {
+        // Backfill the user message with its turn grouping now that we know
+        // whether it started a turn or steered an in-flight one.
+        const turnId = res.steered ? res.target_message_id : res.assistant_message_id;
+        const next = p.map((m) =>
+          m.id === tmpId ? { ...m, turn_id: turnId, is_steer: res.steered } : m
         );
-      }
+        // For a fresh turn, drop in the assistant placeholder (Thinking state).
+        const mid = res.assistant_message_id;
+        if (!res.steered && mid && !next.some((m) => m.id === mid)) {
+          next.push({ ...assistantBase(mid, sid, ""), status: "pending" });
+        }
+        return next;
+      });
       refreshSessions(); // title/order may have changed
     },
     [activeId, refreshSessions]

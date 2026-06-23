@@ -1,4 +1,4 @@
-"""Worker — the generation tier.
+"""Worker, the generation tier.
 
 Runs as its own process/container (no HTTP). N replicas share one Redis Stream
 consumer group, so jobs load-balance across them automatically. Each worker:
@@ -70,15 +70,23 @@ async def handle_job(r, fields: dict) -> None:
         parts = []
         await r.hset(redis_bus.draft_key(amid), mapping={"text": "", "seq": seq})
         await r.expire(redis_bus.draft_key(amid), settings.active_ttl)
-        await asyncio.sleep(random.uniform(1.0, 1.8))  # "thinking"
+        await _think()  # pause before regenerating
         remaining = tokenize(POOLS[pool])
 
+    async def _think() -> None:
+        await asyncio.sleep(
+            random.uniform(settings.think_min_delay, settings.think_max_delay)
+        )
+
     try:
+        # Pause to "think" before the very first token, just like a steer does.
+        # The UI shows a "Thinking" state (empty streaming reply) during this.
+        await _think()
         while remaining:
             # Durable control: a cancel flag and a queue of steer instructions,
             # both polled here. Because they live in Redis (not pub/sub), a
-            # steer/cancel issued while this reply was still QUEUED — e.g. during
-            # a worker outage — is applied when the job is finally picked up,
+            # steer/cancel issued while this reply was still QUEUED, e.g. during
+            # a worker outage, is applied when the job is finally picked up,
             # instead of being silently dropped.
             if await r.get(redis_bus.cancel_key(amid)) is not None:
                 cancelled = True

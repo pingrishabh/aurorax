@@ -1,14 +1,24 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+type Tone = "neutral" | "coral" | "muted";
+
+const tones: Record<Tone, string> = {
+  neutral: "border-border bg-secondary text-foreground",
+  coral: "border-transparent bg-primary/15 text-primary",
+  muted: "border-border bg-transparent text-muted-foreground",
+};
+
 export function Badge({
   className,
+  tone = "neutral",
   ...props
-}: React.HTMLAttributes<HTMLSpanElement>) {
+}: React.HTMLAttributes<HTMLSpanElement> & { tone?: Tone }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
+        tones[tone],
         className
       )}
       {...props}

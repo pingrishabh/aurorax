@@ -1,4 +1,4 @@
-# Mock Chat — steerable, multi-session, horizontally scalable
+# Mock Chat, steerable, multi-session, horizontally scalable
 
 A ChatGPT-style mock chat UI that demonstrates three requirements:
 
@@ -7,7 +7,7 @@ A ChatGPT-style mock chat UI that demonstrates three requirements:
   changes direction and gets a `steered` badge).
 - **Multiple chat sessions**, ChatGPT-style sidebar, persisted server-side so
   they survive reload.
-- **Horizontally scalable backend** — stateless API replicas behind a load
+- **Horizontally scalable backend**, stateless API replicas behind a load
   balancer, an independently-scaled worker pool, Redis for coordination. See
   [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -30,19 +30,19 @@ This starts the full distributed topology: Postgres, Redis, **3× api**,
 
 ## Try the demo (smoke checklist)
 
-1. **Stream** — send "Tell me about horizontal scaling." Watch it type out.
-2. **Steer mid-stream** — *while it is still typing*, send "make it shorter" (or
+1. **Stream**, send "Tell me about horizontal scaling." Watch it type out.
+2. **Steer mid-stream**, *while it is still typing*, send "make it shorter" (or
    "in French", "as a haiku", "be a pirate"). The reply changes direction and
    shows a **steered** badge. Input was never blocked.
-3. **Stop** — send a message, then hit the ■ Stop button. Generation halts and
+3. **Stop**, send a message, then hit the ■ Stop button. Generation halts and
    the message is tagged **stopped**.
-4. **Reload mid-stream** — send a message and refresh the page while it types.
+4. **Reload mid-stream**, send a message and refresh the page while it types.
    It reconnects and catches up the partial reply (Postgres history + Redis
    draft buffer).
-5. **Multiple sessions** — "New" in the sidebar; switch between chats; rename /
+5. **Multiple sessions**, "New" in the sidebar; switch between chats; rename /
    delete via the ⋯ menu. Open http://localhost:8080 in a second tab to see the
    same persisted sessions.
-6. **It's really distributed** — `docker compose ps` shows 3 api + 3 worker.
+6. **It's really distributed**, `docker compose ps` shows 3 api + 3 worker.
    Scale further:
    ```bash
    docker compose up --build --scale api=5 --scale worker=8
@@ -51,7 +51,7 @@ This starts the full distributed topology: Postgres, Redis, **3× api**,
 ## Project layout
 
 ```
-server/                 # Python package — one codebase, two entrypoints
+server/                 # Python package, one codebase, two entrypoints
   app/main.py           #   api  (FastAPI: REST + SSE)         [stateless]
   app/worker.py         #   worker (Redis consumer-group loop) [generation]
   app/db.py             #   async SQLAlchemy engine + schema
@@ -95,7 +95,7 @@ DATABASE_URL=postgresql+asyncpg://chat:chat@localhost:5432/chat \
 REDIS_URL=redis://localhost:6379/0 \
 python -m app.worker
 
-# web (another shell, in web/) — proxies /api to the api above
+# web (another shell, in web/), proxies /api to the api above
 cd web && npm install && VITE_API_TARGET=http://localhost:8000 npm run dev
 ```
 
@@ -105,4 +105,4 @@ cd web && npm install && VITE_API_TARGET=http://localhost:8000 npm run dev
 - Steering routes by keyword: shorter / detailed / French / haiku / pirate /
   excited; anything else rotates to a different style so the change is visible.
 - Token pacing and TTLs are tunable via env (`TOKEN_MIN_DELAY`,
-  `TOKEN_MAX_DELAY`, `ACTIVE_TTL`) — see `.env.example`.
+  `TOKEN_MAX_DELAY`, `ACTIVE_TTL`), see `.env.example`.

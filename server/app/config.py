@@ -23,6 +23,12 @@ class Settings:
     token_min_delay: float = float(os.environ.get("TOKEN_MIN_DELAY", "0.03"))
     token_max_delay: float = float(os.environ.get("TOKEN_MAX_DELAY", "0.12"))
 
+    # "Thinking" pause (seconds) before the first token of a reply, and again
+    # after a steer restarts generation. Makes the assistant feel like it pauses
+    # to consider before answering.
+    think_min_delay: float = float(os.environ.get("THINK_MIN_DELAY", "0.8"))
+    think_max_delay: float = float(os.environ.get("THINK_MAX_DELAY", "1.6"))
+
     # How long an "active generation" marker / draft buffer lives without a
     # heartbeat before Redis expires it (seconds).
     active_ttl: int = int(os.environ.get("ACTIVE_TTL", "60"))

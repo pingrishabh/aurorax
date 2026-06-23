@@ -33,6 +33,8 @@ class MessageOut(BaseModel):
     content: str
     status: str
     steered: bool
+    turn_id: uuid.UUID | None = None
+    is_steer: bool = False
     created_at: datetime
 
 

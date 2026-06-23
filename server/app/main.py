@@ -1,4 +1,4 @@
-"""FastAPI app — the stateless web tier.
+"""FastAPI app, the stateless web tier.
 
 Replicas of this process sit behind nginx. They own no in-memory chat state:
 everything durable is in Postgres, everything live/coordinated is in Redis.
@@ -131,15 +131,6 @@ async def send_message(
     if not session:
         raise HTTPException(404, "session not found")
 
-    # Persist the user's message immediately (durable, survives reload).
-    user_msg = Message(
-        session_id=session_id, role="user", content=body.content, status="complete"
-    )
-    db.add(user_msg)
-    if session.title == "New chat":
-        session.title = body.content[:40]
-    await db.commit()
-
     # Decide steer-vs-new with a single atomic gate: SET NX on the
     # active-generation marker. The winner starts a new turn; everyone else is
     # steering an in-progress reply. This is race-free across all api replicas.
@@ -150,13 +141,32 @@ async def send_message(
         nx=True,
         ex=settings.active_ttl,
     )
+    active_id = None if won else await r.get(redis_bus.active_key(str(session_id)))
+    # The turn this user message belongs to = the assistant reply's id (the new
+    # one for a fresh turn, or the in-flight one being steered).
+    turn_uuid = new_assistant_id if won else (
+        uuid.UUID(active_id) if active_id else None
+    )
+
+    # Persist the user's message immediately (durable, survives reload).
+    user_msg = Message(
+        session_id=session_id,
+        role="user",
+        content=body.content,
+        status="complete",
+        turn_id=turn_uuid,
+        is_steer=not won,
+    )
+    db.add(user_msg)
+    if won and session.title == "New chat":
+        session.title = body.content[:40]
+    await db.commit()
 
     if not won:
         # A reply is in flight (or still queued) -> steer it. The instruction
         # goes to a DURABLE per-message list so it survives until a worker
         # actually picks the job up (e.g. across a worker outage), rather than
         # a fire-and-forget pub/sub message that a down worker would miss.
-        active_id = await r.get(redis_bus.active_key(str(session_id)))
         if active_id:
             await r.rpush(redis_bus.steerq_key(active_id), body.content)
             await r.expire(redis_bus.steerq_key(active_id), settings.active_ttl)
@@ -164,10 +174,7 @@ async def send_message(
             if target:
                 target.steered = True
                 await db.commit()
-        return SendResult(
-            steered=True,
-            target_message_id=uuid.UUID(active_id) if active_id else None,
-        )
+        return SendResult(steered=True, target_message_id=turn_uuid)
 
     # We own this turn: create the assistant placeholder and enqueue the job.
     assistant = Message(
@@ -176,6 +183,7 @@ async def send_message(
         role="assistant",
         content="",
         status="pending",
+        turn_id=new_assistant_id,
     )
     db.add(assistant)
     await db.commit()

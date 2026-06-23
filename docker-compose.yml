@@ -1,4 +1,4 @@
-# One command — `docker compose up --build` — brings up the whole distributed
+# One command, `docker compose up --build`, brings up the whole distributed
 # topology: postgres, redis, 3x api, 3x worker, and nginx serving the SPA.
 #
 # Only nginx publishes a host port. api/worker run as multiple replicas with no

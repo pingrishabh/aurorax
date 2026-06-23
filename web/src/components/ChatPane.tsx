@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import { MessageRow } from "./Message";
+import { Turn, groupTurns } from "./Turn";
 import { Composer } from "./Composer";
+import { Logo } from "./Logo";
 import type { Message } from "@/lib/types";
 
 interface Props {
@@ -17,25 +18,30 @@ export function ChatPane({ messages, streaming, onSend, onStop }: Props) {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const turns = groupTurns(messages);
+
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl py-6">
-          {messages.length === 0 ? (
-            <div className="px-4 py-20 text-center text-sm text-muted-foreground">
-              <p className="text-base font-medium text-foreground">
-                Start a conversation
-              </p>
-              <p className="mt-1">
-                Send a message — you can keep typing and steer the reply while it
-                streams.
-              </p>
-            </div>
-          ) : (
-            messages.map((m) => <MessageRow key={m.id} message={m} />)
-          )}
-          <div ref={endRef} />
-        </div>
+        {turns.length === 0 ? (
+          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-6 text-center">
+            <Logo className="mb-5 h-11 w-11 text-lg" />
+            <h1 className="font-display text-4xl text-foreground">
+              How can I help?
+            </h1>
+            <p className="mt-3 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
+              Send a message to begin. Keep typing to steer the reply in real
+              time while it streams.
+            </p>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-3xl pb-8">
+            {turns.map((g) => (
+              <Turn key={g.key} group={g} />
+            ))}
+          </div>
+        )}
+        <div ref={endRef} />
       </div>
       <Composer onSend={onSend} onStop={onStop} streaming={streaming} />
     </main>

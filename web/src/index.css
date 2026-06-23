@@ -2,61 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Cal.com-inspired palette: neutral, calm, generous whitespace, subtle borders.
-   (Mirrors what `npx getdesign@latest add cal` documents in DESIGN.md.) */
+/* Dark-mode-only theme, derived from the DESIGN.md design scheme.
+   Warm near-black surfaces, cream-tinted ink, scarce coral accent.
+   Applied to a chat product surface (not the marketing furniture). */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 224 9% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 9% 12%;
-    --primary: 224 10% 12%;
+    --background: 40 7% 9%; /* surface-dark   #181715 */
+    --foreground: 45 33% 96%; /* on-dark        #faf9f5 */
+    --card: 40 8% 14%; /* surface-dark-elevated #252320 */
+    --card-foreground: 45 33% 96%;
+    --primary: 15 52% 58%; /* coral          #cc785c */
+    --primary-active: 15 46% 45%; /* coral active   #a9583e */
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 224 9% 12%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 220 14% 96%;
-    --accent-foreground: 224 9% 12%;
-    --destructive: 0 72% 51%;
+    --secondary: 42 7% 11%; /* surface-dark-soft #1f1e1b */
+    --secondary-foreground: 45 33% 96%;
+    --muted: 42 7% 11%;
+    --muted-foreground: 40 7% 61%; /* on-dark-soft #a09d96 */
+    --accent: 40 8% 14%;
+    --accent-foreground: 45 33% 96%;
+    --destructive: 0 53% 52%; /* error          #c64545 */
     --destructive-foreground: 0 0% 100%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 224 9% 12%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 224 14% 8%;
-    --foreground: 220 14% 96%;
-    --card: 224 13% 10%;
-    --card-foreground: 220 14% 96%;
-    --primary: 220 14% 96%;
-    --primary-foreground: 224 14% 8%;
-    --secondary: 222 12% 16%;
-    --secondary-foreground: 220 14% 96%;
-    --muted: 222 12% 16%;
-    --muted-foreground: 220 9% 60%;
-    --accent: 222 12% 18%;
-    --accent-foreground: 220 14% 96%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 222 12% 18%;
-    --input: 222 12% 20%;
-    --ring: 220 14% 80%;
-    --radius: 0.5rem;
+    --border: 38 8% 17%;
+    --input: 38 8% 17%;
+    --ring: 15 52% 58%;
+    --teal: 168 39% 54%; /* accent-teal */
+    --amber: 32 75% 63%; /* accent-amber */
+    --success: 134 39% 54%;
+    --radius: 0.75rem;
   }
 
   * {
     border-color: hsl(var(--border));
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     margin: 0;
     background: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
   }
 
   ::-webkit-scrollbar {
@@ -66,21 +61,56 @@
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
     border-radius: 9999px;
-    border: 2px solid hsl(var(--background));
+    border: 3px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(40 7% 24%);
   }
 }
 
 @layer utilities {
+  /* serif display, per DESIGN.md (Copernicus -> Cormorant Garamond) */
+  .font-display {
+    font-family: "Cormorant Garamond", "Tiempos Headline", Georgia, serif;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
   /* blinking caret on a streaming reply */
   .caret::after {
-    content: "▍";
-    margin-left: 1px;
-    animation: blink 1s steps(2, start) infinite;
-    color: hsl(var(--muted-foreground));
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 1.05em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: hsl(var(--primary));
+    border-radius: 1px;
+    animation: blink 1.1s steps(2, start) infinite;
   }
   @keyframes blink {
     to {
-      visibility: hidden;
+      opacity: 0;
+    }
+  }
+
+  /* "Thinking" animated dots */
+  .dots::after {
+    content: "";
+    animation: dots 1.4s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0% {
+      content: "";
+    }
+    25% {
+      content: ".";
+    }
+    50% {
+      content: "..";
+    }
+    75% {
+      content: "...";
     }
   }
 }
