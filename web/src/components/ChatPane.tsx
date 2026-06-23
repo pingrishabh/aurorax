@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import { Turn, groupTurns } from "./Turn";
+import { Turn } from "./Turn";
 import { Composer } from "./Composer";
 import { Logo } from "./Logo";
+import { groupTurns } from "@/lib/turns";
 import type { Message } from "@/lib/types";
 
 interface Props {

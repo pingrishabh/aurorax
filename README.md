@@ -99,6 +99,38 @@ python -m app.worker
 cd web && npm install && VITE_API_TARGET=http://localhost:8000 npm run dev
 ```
 
+## Tests
+
+**Backend** (pytest against a throwaway Postgres + Redis, one command, no host
+setup):
+
+```bash
+docker compose -f docker-compose.test.yml up --build \
+  --abort-on-container-exit --exit-code-from tests
+```
+
+48 tests covering the good/bad/ugly/edge: session CRUD + validation, non-blocking
+send, the steer-vs-new gate (incl. 12 simultaneous sends to one session), turn
+grouping, worker generation + thinking gap + cancel + last-steer-wins, the
+pub/sub multiplex hub and draft buffer, and fault tolerance (worker-outage
+durability, steer durability across an outage, `XAUTOCLAIM` reclaim,
+persist-then-ack no-ack-on-failure, and dead-lettering). Sources in
+`server/tests/`.
+
+**Frontend** (Vitest, pure-logic units, no infra):
+
+```bash
+cd web && npm install && npm test
+```
+
+13 tests covering the turn-grouping (`lib/turns.ts`) and the SSE reducer
+(`lib/stream.ts`): token append, seq de-dup, catch-up overlap, steered, reset,
+and done.
+
+> The live SSE HTTP stream is verified end-to-end against the running stack
+> (httpx's ASGITransport buffers responses, so the in-process suite tests the
+> hub + draft buffer the endpoint relays instead).
+
 ## Notes
 - SSE through nginx needs `proxy_buffering off` + HTTP/1.1 (configured in
   `nginx/nginx.conf`).

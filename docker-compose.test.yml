@@ -1,0 +1,39 @@
+# Hermetic backend test run:
+#   docker compose -f docker-compose.test.yml up --build \
+#     --abort-on-container-exit --exit-code-from tests
+#
+# Spins up a throwaway Postgres + Redis and runs the pytest suite against them
+# (isolated Redis DB 15, sped-up mock-LLM timing). Exits with pytest's code.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  tests:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.test
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+      REDIS_URL: redis://redis:6379/15
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

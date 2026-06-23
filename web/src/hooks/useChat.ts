@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { applyFrame, assistantBase } from "@/lib/stream";
 import type { Message, Session, StreamFrame } from "@/lib/types";
-
-function assistantBase(mid: string, sid: string, content: string): Message {
-  return {
-    id: mid,
-    session_id: sid,
-    role: "assistant",
-    content,
-    status: "streaming",
-    steered: false,
-    turn_id: mid,
-    is_steer: false,
-    created_at: new Date().toISOString(),
-  };
-}
 
 export function useChat() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -65,41 +52,7 @@ export function useChat() {
       } catch {
         return;
       }
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === frame.mid);
-        const patch = (p: Partial<Message>, base?: Message): Message[] => {
-          if (idx === -1) return base ? [...prev, { ...base, ...p }] : prev;
-          const copy = prev.slice();
-          copy[idx] = { ...copy[idx], ...p };
-          return copy;
-        };
-        switch (frame.type) {
-          case "catchup":
-            nextSeq.current.set(frame.mid, frame.seq);
-            return patch(
-              { content: frame.text, status: "streaming" },
-              assistantBase(frame.mid, sid, frame.text)
-            );
-          case "token": {
-            const expect = nextSeq.current.get(frame.mid) ?? 0;
-            if (frame.seq < expect) return prev; // already applied
-            nextSeq.current.set(frame.mid, frame.seq + 1);
-            const existing = idx === -1 ? "" : prev[idx].content;
-            return patch(
-              { content: existing + frame.text, status: "streaming" },
-              assistantBase(frame.mid, sid, frame.text)
-            );
-          }
-          case "steered":
-            return patch({ steered: true });
-          case "reset":
-            // Steering restarts the reply: clear the shown text so the
-            // "Thinking…" placeholder appears until new tokens stream in.
-            return patch({ content: "" });
-          case "done":
-            return patch({ status: frame.status, steered: frame.steered });
-        }
-      });
+      setMessages((prev) => applyFrame(prev, frame, nextSeq.current, sid));
     };
 
     return () => es.close();

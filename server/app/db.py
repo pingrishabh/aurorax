@@ -6,13 +6,21 @@ from here so the schema and access patterns are shared.
 from __future__ import annotations
 
 import asyncio
+import os
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from .config import settings
 from .models import Base
 
-engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+# Tests run each case on a fresh event loop; an asyncpg connection is bound to
+# the loop that created it, so reusing a pooled one across loops fails. NullPool
+# (opt-in via env) opens a fresh connection per operation to sidestep that.
+if os.environ.get("DB_NULLPOOL") == "1":
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+else:
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
