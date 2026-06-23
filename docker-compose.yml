@@ -1,0 +1,70 @@
+# One command — `docker compose up --build` — brings up the whole distributed
+# topology: postgres, redis, 3x api, 3x worker, and nginx serving the SPA.
+#
+# Only nginx publishes a host port. api/worker run as multiple replicas with no
+# published ports; nginx load-balances the api replicas and the worker replicas
+# share a Redis consumer group. Tune counts with:
+#   docker compose up --build --scale api=5 --scale worker=8
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./server
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+    # default CMD = uvicorn app.main:app
+
+  worker:
+    build: ./server
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
